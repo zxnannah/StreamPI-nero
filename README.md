@@ -232,6 +232,8 @@ For a container-based setup, see [`docs/docker.md`](docs/docker.md).
 
 ## 🚀 Usage
 
+For a Chinese code map, paper-to-implementation index, current reproduction gaps, and a staged checklist, see [`docs/reproduction_zh.md`](docs/reproduction_zh.md).
+
 ### Training Configurations
 
 StreamPI configurations are defined in [`src/openpi/training/config.py`](src/openpi/training/config.py). The temporal context length $T$ is controlled by `Pi0Config.hist_horizon`; frame spacing and temporal jitter are controlled by `DataConfig.hist_interval`, `jitter_range`, and `enable_jitter`.

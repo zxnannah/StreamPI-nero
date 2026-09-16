@@ -119,3 +119,58 @@ def test_extract_prompt_from_task():
 
     with pytest.raises(ValueError, match="task_index=2 not found in task mapping"):
         transform({"task_index": 2})
+
+
+def test_temporal_jitter_samples_independent_intervals_and_keeps_cameras_synchronized(monkeypatch):
+    sampled_gaps = iter([1, 2, 1, 2])
+    monkeypatch.setattr(_transforms.random, "randint", lambda low, high: next(sampled_gaps))
+    transform = _transforms.TemporalJitter(
+        jitter_range=(-2, -1, 0, 1, 2),
+        hist_interval=1,
+        hist_horizon=5,
+        hist_sequence_keys=("ego", "wrist"),
+        enable_jitter=False,
+        hist_interval_range=(1, 2),
+    )
+    data = {
+        "ego": np.arange(9),
+        "wrist": np.arange(9) + 100,
+    }
+
+    transformed = transform(data)
+
+    assert np.array_equal(transformed["ego"], np.array([2, 4, 5, 7, 8]))
+    assert np.array_equal(transformed["wrist"], np.array([102, 104, 105, 107, 108]))
+
+
+def test_temporal_jitter_uses_one_offset_for_all_cameras(monkeypatch):
+    choices = iter([1, -1])
+    monkeypatch.setattr(_transforms.random, "choice", lambda values: next(choices))
+    transform = _transforms.TemporalJitter(
+        jitter_range=(-1, 0, 1),
+        hist_interval=2,
+        hist_horizon=3,
+        hist_sequence_keys=("ego", "wrist"),
+        enable_jitter=True,
+    )
+    data = {
+        "ego": np.arange(7),
+        "wrist": np.arange(7) + 100,
+    }
+
+    transformed = transform(data)
+
+    assert np.array_equal(transformed["ego"], np.array([3, 5, 6]))
+    assert np.array_equal(transformed["wrist"], np.array([103, 105, 106]))
+
+
+def test_temporal_jitter_rejects_ambiguous_sampling_modes():
+    with pytest.raises(ValueError, match="cannot be used together"):
+        _transforms.TemporalJitter(
+            jitter_range=(-1, 0, 1),
+            hist_interval=1,
+            hist_horizon=5,
+            hist_sequence_keys=("ego", "wrist"),
+            enable_jitter=True,
+            hist_interval_range=(1, 2),
+        )

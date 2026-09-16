@@ -1,6 +1,8 @@
 import dataclasses
+import types
 
 import jax
+import pytest
 
 from openpi.models import pi0_config
 from openpi.training import config as _config
@@ -82,3 +84,46 @@ def test_with_real_dataset():
 
     for _, actions in batches:
         assert actions.shape == (config.batch_size, config.model.action_horizon, config.model.action_dim)
+
+
+def test_local_dataset_root_and_random_history_span_are_forwarded(monkeypatch):
+    calls = {}
+
+    class TestDataset:
+        def __init__(self, repo_id, *, root, delta_timestamps):
+            calls["dataset"] = (repo_id, root, delta_timestamps)
+
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, index):
+            raise NotImplementedError
+
+    def make_metadata(repo_id, *, root):
+        calls["metadata"] = (repo_id, root)
+        return types.SimpleNamespace(fps=10, tasks={})
+
+    monkeypatch.setattr(_data_loader.lerobot_dataset, "LeRobotDatasetMetadata", make_metadata)
+    monkeypatch.setattr(_data_loader.lerobot_dataset, "LeRobotDataset", TestDataset)
+    data_config = _config.DataConfig(
+        repo_id="nero/mission2",
+        dataset_root="/data/nero/mission2-v2",
+        action_sequence_keys=("action",),
+        hist_sequence_keys=("observation.images.ego_view", "observation.images.wrist_view"),
+        hist_horizon=5,
+        hist_interval=1,
+        hist_interval_range=(1, 2),
+    )
+
+    _data_loader.create_torch_dataset(data_config, action_horizon=20, model_config=pi0_config.Pi0Config())
+
+    assert calls["metadata"] == ("nero/mission2", "/data/nero/mission2-v2")
+    assert calls["dataset"][0:2] == ("nero/mission2", "/data/nero/mission2-v2")
+    delta_timestamps = calls["dataset"][2]
+    assert delta_timestamps["action"] == pytest.approx([step / 10 for step in range(20)])
+    assert delta_timestamps["observation.images.ego_view"] == pytest.approx(
+        [step / 10 for step in range(-8, 1)]
+    )
+    assert delta_timestamps["observation.images.wrist_view"] == pytest.approx(
+        [step / 10 for step in range(-8, 1)]
+    )

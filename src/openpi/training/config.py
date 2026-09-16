@@ -22,6 +22,7 @@ import openpi.policies.agilex_policy as agilex_policy
 import openpi.policies.calvin_policy as calvin_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.nero_policy as nero_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -67,6 +68,8 @@ class AssetsConfig:
 class DataConfig:
     # LeRobot repo id. If None, fake data will be created.
     repo_id: str | None = None
+    # Optional local LeRobot dataset root. When set, the loader reads this directory instead of the HF cache.
+    dataset_root: str | None = None
     # Directory within the assets directory containing the data assets.
     asset_id: str | None = None
     # Contains precomputed normalization stats. If None, normalization will not be performed.
@@ -92,6 +95,8 @@ class DataConfig:
 
     hist_horizon: int = 3
     hist_interval: int = 5
+    # Optional inclusive range for independently sampled gaps between historical observations.
+    hist_interval_range: tuple[int, int] | None = None
     jitter_range: tuple = (-2, -1, 0, 1, 2)
     enable_jitter: bool = False
 
@@ -597,6 +602,55 @@ class LeRobotAgilexDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotNeroDataConfig(DataConfigFactory):
+    """Data configuration for the single-arm Nero dataset."""
+
+    # Nero actions are absolute end-effector and hand targets, not joint deltas.
+    use_delta_joint_actions: bool = False
+    default_prompt: str | None = None
+
+    repack_transforms: tyro.conf.Suppress[_transforms.Group] = dataclasses.field(
+        default=_transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "images": {
+                            "ego_view": "observation.images.ego_view",
+                            "wrist_view": "observation.images.wrist_view",
+                        },
+                        "state": "observation.state",
+                        "actions": "action",
+                    }
+                )
+            ]
+        )
+    )
+    action_sequence_keys: Sequence[str] = ("action",)
+    hist_sequence_keys: Sequence[str] = (
+        "observation.images.ego_view",
+        "observation.images.wrist_view",
+    )
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        if self.use_delta_joint_actions:
+            raise ValueError("Nero actions are absolute targets; use_delta_joint_actions must remain False")
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=self.repack_transforms,
+            data_transforms=_transforms.Group(
+                inputs=[nero_policy.NeroInputs()],
+                outputs=[nero_policy.NeroOutputs()],
+            ),
+            model_transforms=ModelTransformFactory(default_prompt=self.default_prompt)(model_config),
+            action_sequence_keys=self.action_sequence_keys,
+            hist_sequence_keys=self.hist_sequence_keys,
+            use_quantile_norm=False,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
@@ -1010,6 +1064,51 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         num_train_steps=50_000,
         save_interval=10_000,
+    ),
+    TrainConfig(
+        name="pi05_nero_stream5_mission2",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=17, hist_horizon=5),
+        data=LeRobotNeroDataConfig(
+            repo_id="nero_mission2",
+            default_prompt="pick up the bottle with green cap and place it in the white rectangle area",
+            base_config=DataConfig(
+                dataset_root="/home/zhouxn/StreamPI/data/nero/mission2_smooth_lerobot_v2_0",
+                hist_horizon=5,
+                hist_interval=1,
+                hist_interval_range=(1, 2),
+            ),
+            assets=AssetsConfig(asset_id="nero_mission2"),
+        ),
+        batch_size=1,
+        num_workers=2,
+        fsdp_devices=1,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=50_000,
+        save_interval=10_000,
+    ),
+    TrainConfig(
+        name="pi05_nero_stream5_mission7",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=17, hist_horizon=5),
+        data=LeRobotNeroDataConfig(
+            repo_id="nero_mission7",
+            default_prompt=(
+                "Pick up the white cup, place it over the white circular area, pour its contents into the white box, "
+                "and finally place the cup inside the white square frame."
+            ),
+            base_config=DataConfig(
+                dataset_root="/home/zhouxn/StreamPI/data/nero/mission7_smooth_lerobot_v2_0",
+                hist_horizon=5,
+                hist_interval=1,
+                hist_interval_range=(1, 2),
+            ),
+            assets=AssetsConfig(asset_id="nero_mission7"),
+        ),
+        batch_size=2,
+        num_workers=4,
+        fsdp_devices=2,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=25_000,
+        save_interval=5_000,
     ),
     #
     # Fine-tuning Aloha configs.

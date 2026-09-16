@@ -139,38 +139,49 @@ def create_torch_dataset(
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
+    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=data_config.dataset_root)
 
     delta_timestamps = {
         key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
     }
 
     hist_interval = data_config.hist_interval
+    hist_interval_range = data_config.hist_interval_range
     hist_horizon = data_config.hist_horizon
     jitter_range = data_config.jitter_range
     enable_jitter = data_config.enable_jitter
     step_time = 1.0 / dataset_meta.fps
+    temporal_jitter = _transforms.TemporalJitter(
+        jitter_range,
+        hist_interval,
+        hist_horizon,
+        data_config.hist_sequence_keys,
+        enable_jitter,
+        hist_interval_range,
+    )
 
     hist_delta_timestamps = {}
+    max_hist_interval = hist_interval if hist_interval_range is None else hist_interval_range[1]
 
     for key in data_config.hist_sequence_keys:
-        base_steps = [
-            -1 * t
-            for t in range((hist_horizon - 1) * hist_interval, -1, -1)
-        ]
+        base_steps = [-t for t in range((hist_horizon - 1) * max_hist_interval, -1, -1)]
         hist_delta_timestamps[key] = [s * step_time for s in base_steps]
 
     delta_timestamps.update(hist_delta_timestamps)
 
     dataset = lerobot_dataset.LeRobotDataset(
         data_config.repo_id,
+        root=data_config.dataset_root,
         delta_timestamps=delta_timestamps,
     )
 
     if data_config.prompt_from_task:
         dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
 
-    dataset = TransformedDataset(dataset, [_transforms.TemporalJitter(jitter_range, hist_interval, hist_horizon, data_config.hist_sequence_keys, enable_jitter)])
+    dataset = TransformedDataset(
+        dataset,
+        [temporal_jitter],
+    )
 
     return dataset
 

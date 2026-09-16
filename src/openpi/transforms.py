@@ -184,30 +184,60 @@ class Unnormalize(DataTransformFn):
 
 @dataclasses.dataclass(frozen=True)
 class TemporalJitter(DataTransformFn):
-    jitter_range: None
+    jitter_range: Sequence[int]
     hist_interval: int
     hist_horizon: int
-    hist_sequence_keys: list
+    hist_sequence_keys: Sequence[str]
     enable_jitter: bool
+    # If provided, sample every gap between adjacent historical observations independently.
+    # This preserves the real-time scale for datasets whose FPS differs from the source setup.
+    hist_interval_range: tuple[int, int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.hist_horizon < 1:
+            raise ValueError("hist_horizon must be at least 1")
+        if self.hist_interval < 1:
+            raise ValueError("hist_interval must be at least 1")
+        if self.hist_interval_range is not None:
+            low, high = self.hist_interval_range
+            if low < 1 or high < low:
+                raise ValueError("hist_interval_range must satisfy 1 <= low <= high")
+            if self.enable_jitter:
+                raise ValueError("hist_interval_range and enable_jitter cannot be used together")
 
     def __call__(self, data: DataDict) -> DataDict:
+        if not self.hist_sequence_keys:
+            return data
+
+        sequence_length = data[self.hist_sequence_keys[0]].shape[0]
+        if sequence_length < 1:
+            raise ValueError("Historical sequences cannot be empty")
+
+        if self.hist_interval_range is not None:
+            low, high = self.hist_interval_range
+            gaps = [random.randint(low, high) for _ in range(self.hist_horizon - 1)]
+            sampled_indices = [sequence_length - 1]
+            for gap in gaps:
+                sampled_indices.append(sampled_indices[-1] - gap)
+            sampled_indices = [int(np.clip(index, 0, sequence_length - 1)) for index in sampled_indices[::-1]]
+        else:
+            base_offset = random.choice(self.jitter_range) if self.enable_jitter else 0
+            sampled_indices = [
+                int(
+                    np.clip(
+                        (sequence_length - 1) - (i * self.hist_interval) + base_offset,
+                        0,
+                        sequence_length - 1,
+                    )
+                )
+                for i in range(self.hist_horizon)
+            ][::-1]
+
         for key in self.hist_sequence_keys:
             full_seq = data[key]
-            T = full_seq.shape[0]
-            
-            sampled_frames = []
-            if self.enable_jitter:
-                base_offset = random.choice(self.jitter_range)
-            else:
-                base_offset = 0
-
-            for i in range(self.hist_horizon):
-                frame_idx = (T - 1) - (i * self.hist_interval) + base_offset
-
-                frame_idx = np.clip(frame_idx, 0, T - 1)
-                sampled_frames.append(full_seq[frame_idx])
-
-            data[key] = np.stack(sampled_frames[::-1], axis=0)
+            if full_seq.shape[0] != sequence_length:
+                raise ValueError("All historical sequences must have the same length")
+            data[key] = np.stack([full_seq[index] for index in sampled_indices], axis=0)
 
         # import cv2
         # T, H, W, _ = data[self.hist_sequence_keys[0]].shape
