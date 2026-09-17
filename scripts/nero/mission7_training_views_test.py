@@ -6,7 +6,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from scripts.nero import mission7_training_views
+import mission7_training_views
 
 FULL_INSTRUCTION = "Complete all three phases."
 PHASE_INSTRUCTIONS = ("Complete phase one.", "Complete phase two.", "Complete phase three.")
