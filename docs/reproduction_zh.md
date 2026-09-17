@@ -228,22 +228,30 @@ python examples/calvin/main.py \
 2. `tasks.jsonl` 同时包含正式任务、`valid`、`invalid`。视图保留原始映射以避免篡改语义，但训练配置不读取 `task_index`，而是注入固定的 mission2 指令。
 3. node2 已建立 Python 3.11/uv 环境；mission2 normalization 已完成，并已通过包含归一化、32 维 padding、双相机映射和 prompt tokenization 的最终 batch 验证。
 
-生成脚本为 `scripts/prepare_nero_lerobot_view.py`。它默认拒绝覆盖已存在的目标目录；显式替换时会先核验原视图 provenance，再在同级临时目录完成转换、检查和视频链接，将旧视图保留为带时间戳的备份，最后原子切换。最终目录权限为 0555，parquet 与元数据权限为 0444。NAS canonical 数据不参与写入。
+mission2 的现有派生视图不受 mission7 新流水线影响。新流水线只读取 mission7 canonical 数据，不会写入 NAS。
 
 Normalization 的维数以当前 OpenPI 调用链为准：`scripts/compute_norm_stats.py` 只执行 repack 和 Nero data adapter，得到 26 维 state 与 19 维 actions；训练时先用这组 26/19 维统计归一化，随后 `PadStatesAndActions` 才补到模型的 32 维。因此需要重新计算 Nero 专用统计，但不应手工把 `norm_stats.json` 扩成 32 维。
 
 ## 12. Nero mission7 长程任务配置
 
-`pi05_nero_stream5_mission7` 与 mission2 并行存在，不覆盖或删除已有配置。它使用 mission7 的完整长指令，而不是把三段阶段标注拆成三个短任务；阶段标注保留用于分阶段成功率分析。
+`pi05_nero_stream5_mission7_views` 与 mission2 并行存在。它使用 canonical
+`meta/training_views.jsonl` 中的 full、phase 和 transition 视图，并从每条视图的 `instruction` 读取语言指令。
 
 - 数据来源：`/mnt/nero_nas/missions/nero/mission7/smooth` 中全部 93 条完整成功人类示范，共 41,626 帧。
-- 标准视图：已在 `/home/zhouxn/StreamPI/data/nero/mission7_smooth_lerobot_v2_0` 创建 LeRobot v2.0 只读派生视图，包含 93 个本地标准化 parquet 和 186 个只读 NAS 视频链接。
+- canonical 训练视图：每个源 episode 包含 1 个 full、3 个 phase 和 2 个 transition，共 558 个视图、107,032 个帧次。
+- 生成目标：`/home/zhouxn/StreamPI/data/nero/mission7_training_views_lerobot_v2_0`。每条 training view
+  物化为一个 LeRobot episode；父视频只复制一次，虚拟 episode 用相对软链接复用完整父视频。
 - 接口：沿用 26 维 state、19 维绝对 action、主视角和物理右腕相机适配器。
 - 时序：10 FPS，`hist_horizon=5`，四段相邻历史间隔分别从 1～2 帧独立抽样。
 - 动作：`action_horizon=17`，约覆盖未来 1.7 秒；长任务通过持续重规划完成，而不是一次预测完整任务。
+- 边界：每个 training view 是独立 episode，因此 phase 的历史和 action chunk 不会越过阶段边界；transition
+  视图保留跨阶段上下文。
 - 首轮训练：2 卡 FSDP、global batch 2、25,000 步、每 5,000 步保存一次。
-- 统计：必须生成独立的 `assets/pi05_nero_stream5_mission7/nero_mission7/norm_stats.json`，不能复用 mission2。
+- 统计：必须生成独立的
+  `assets/pi05_nero_stream5_mission7_views/nero_mission7_views/norm_stats.json`，不能复用 full-only 或 mission2 统计。
 
-标准视图已通过真实数据加载验证：dataset length 为 41,626；global batch 2 下 state 为 `(2, 32)`、actions 为 `(2, 17, 32)`，三路图像均为 `(2, 5, 224, 224, 3)`；主视角和右腕 mask 为真，补齐的左腕 mask 为假。该次验证跳过 normalization，mission7 专用统计生成后还需再做一次带 normalization 的最终验收。
+数据处理入口位于 `scripts/nero/`。依次运行 source audit、training-view build、dataset validation、normalization
+和 normalized batch validation；也可使用 `run_mission7_data_pipeline.sh` 串联。脚本默认拒绝覆盖已有输出。
 
-标准视图工具不再固定主相机分辨率，只要求 `ego_view` 与 `wrist_view` 为三通道 RGB 视频，因此同时兼容 mission2 的 800×1280 主视角和 mission7 的 180×320 主视角。state/action 维度仍严格校验为 26/19。
+生成器不固定主相机分辨率，只要求 `ego_view` 与 `wrist_view` 为三通道 RGB 视频；state/action 维度仍严格
+校验为 26/19。输出采用“按物化后的视图帧次均匀采样”，不额外重加权 full、phase 或 transition。

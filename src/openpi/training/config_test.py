@@ -41,8 +41,8 @@ def test_mission2_train_config_uses_single_gpu_time_matched_settings():
     assert config.data.base_config.hist_interval_range == (1, 2)
 
 
-def test_mission7_train_config_uses_two_gpu_long_horizon_settings():
-    config = _config.get_config("pi05_nero_stream5_mission7")
+def test_mission7_training_views_config_uses_two_gpu_long_horizon_settings():
+    config = _config.get_config("pi05_nero_stream5_mission7_views")
 
     assert config.model.action_horizon == 17
     assert config.model.hist_horizon == 5
@@ -50,8 +50,9 @@ def test_mission7_train_config_uses_two_gpu_long_horizon_settings():
     assert config.fsdp_devices == 2
     assert config.num_train_steps == 25_000
     assert config.save_interval == 5_000
-    assert config.data.repo_id == "nero_mission7"
-    assert config.data.assets.asset_id == "nero_mission7"
-    assert config.data.base_config.dataset_root.endswith("mission7_smooth_lerobot_v2_0")
+    assert config.data.repo_id == "nero_mission7_views"
+    assert config.data.assets.asset_id == "nero_mission7_views"
+    assert config.data.base_config.dataset_root.endswith("mission7_training_views_lerobot_v2_0")
     assert config.data.base_config.hist_interval_range == (1, 2)
+    assert config.data.base_config.prompt_from_task is True
     assert "pour its contents into the white box" in config.data.default_prompt

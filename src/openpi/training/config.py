@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import dataclasses
 import difflib
 import logging
+import os
 import pathlib
 from typing import Any, Literal, Protocol, TypeAlias
 
@@ -1087,21 +1088,25 @@ _CONFIGS = [
         save_interval=10_000,
     ),
     TrainConfig(
-        name="pi05_nero_stream5_mission7",
+        name="pi05_nero_stream5_mission7_views",
         model=pi0_config.Pi0Config(pi05=True, action_horizon=17, hist_horizon=5),
         data=LeRobotNeroDataConfig(
-            repo_id="nero_mission7",
+            repo_id="nero_mission7_views",
             default_prompt=(
                 "Pick up the white cup, place it over the white circular area, pour its contents into the white box, "
                 "and finally place the cup inside the white square frame."
             ),
             base_config=DataConfig(
-                dataset_root="/home/zhouxn/StreamPI/data/nero/mission7_smooth_lerobot_v2_0",
+                dataset_root=os.environ.get(
+                    "NERO_MISSION7_DATASET_ROOT",
+                    "/home/zhouxn/StreamPI/data/nero/mission7_training_views_lerobot_v2_0",
+                ),
                 hist_horizon=5,
                 hist_interval=1,
                 hist_interval_range=(1, 2),
+                prompt_from_task=True,
             ),
-            assets=AssetsConfig(asset_id="nero_mission7"),
+            assets=AssetsConfig(asset_id="nero_mission7_views"),
         ),
         batch_size=2,
         num_workers=4,
