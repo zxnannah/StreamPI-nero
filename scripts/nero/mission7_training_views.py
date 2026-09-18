@@ -69,6 +69,17 @@ def _sha256(path: Path) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _canonical_json_sha256(path: Path) -> str:
+    """Hash JSON content independently of whitespace and key formatting."""
+    canonical = json.dumps(
+        _read_json(path),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
 def _relative_episode_path(template: str, episode_index: int, chunks_size: int, **kwargs: str) -> Path:
     return Path(
         template.format(
@@ -161,7 +172,7 @@ def audit_source(source: Path, view_types: Sequence[str] = SUPPORTED_VIEW_TYPES)
     if sorted(episode_by_index) != list(range(len(episodes))):
         raise ValueError("Source episode indices must be contiguous and start at zero")
 
-    contract_hash = _sha256(paths["phase_contract"])
+    contract_hash = _canonical_json_sha256(paths["phase_contract"])
     view_ids: set[str] = set()
     views_by_parent: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for view in views:

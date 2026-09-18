@@ -21,7 +21,7 @@ log_path="${NERO_MISSION7_LOG_DIR}/mission7_training_views_norm_stats.log"
 
 cd "${NERO_REPO_ROOT}"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cpu}"
-uv run python scripts/compute_norm_stats.py \
+uv run python scripts/nero/compute_mission7_norm_stats_fast.py \
     --config-name "${NERO_MISSION7_CONFIG_NAME}" \
     2>&1 | tee "${log_path}"
 

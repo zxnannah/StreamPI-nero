@@ -39,3 +39,7 @@ scripts/nero/run_mission7_data_pipeline.sh
 保留相对软链接，例如使用 `rsync -a`，不要再使用会展开链接并制造重复视频的 `rsync -L`。
 
 脚本默认拒绝覆盖现有输出或 normalization 文件。需要重跑时，应先人工核对并移走旧输出，而不是直接覆盖。
+
+`30_compute` 使用低维快速路径，只读取每个虚拟 episode 的 parquet，不解码视频。它为每一帧构造与 LeRobot
+一致的 action horizon，并在虚拟 episode 边界重复最后一帧 action，因此保留 full、phase、transition 视图的
+实际训练权重和边界语义。输出格式与 OpenPI 标准 `norm_stats.json` 相同。

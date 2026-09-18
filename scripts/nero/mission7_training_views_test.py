@@ -70,8 +70,15 @@ def _make_source(root: Path) -> None:
     )
     _write_jsonlines(root / "meta/tasks.jsonl", [{"task_index": 0, "task": FULL_INSTRUCTION}])
     contract_path = root / "meta/long_horizon_phase_contract.json"
-    _write_json(contract_path, {"contract_id": "test", "phases": phases})
-    contract_hash = f"sha256:{hashlib.sha256(contract_path.read_bytes()).hexdigest()}"
+    contract = {"contract_id": "test", "phases": phases}
+    _write_json(contract_path, contract)
+    canonical_contract = json.dumps(
+        contract,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    contract_hash = f"sha256:{hashlib.sha256(canonical_contract).hexdigest()}"
 
     base = {
         "schema_version": "uni_data.long_horizon_training_view.v1",

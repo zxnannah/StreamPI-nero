@@ -21,6 +21,7 @@ data/
 wandb/
 outputs/
 checkpoints/
+assets/pi05_nero_stream5_mission7_views/
 
 # OS / Editor
 .DS_Store
